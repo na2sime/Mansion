@@ -1,0 +1,59 @@
+{
+  "name": "mansion",
+  "version": "1.0.0",
+  "description": "Securised chat application with end-to-end encryption",
+  "homepage": "https://github.com/na2sime/Mansion#readme",
+  "bugs": {
+    "url": "https://github.com/na2sime/Mansion/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/na2sime/Mansion.git"
+  },
+  "license": "ISC",
+  "author": "ABDIOU Nassime",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "setup": "npm install && npm run setup:env && npm run build:common",
+    "setup:env": "for service in api-gateway auth user message notifications; do cp services/$service/.env.example services/$service/.env 2>/dev/null || true; done",
+    "build:common": "cd packages/common && npm run build",
+    "build:common:watch": "cd packages/common && npm run dev",
+    "infra": "docker-compose up -d postgres redis rabbitmq",
+    "infra:stop": "docker-compose stop postgres redis rabbitmq",
+    "infra:down": "docker-compose down",
+    "infra:logs": "docker-compose logs -f postgres redis rabbitmq",
+    "infra:ps": "docker-compose ps postgres redis rabbitmq",
+    "dev:api-gateway": "cd services/api-gateway && npm run dev",
+    "dev:auth": "cd services/auth && npm run dev",
+    "dev:user": "cd services/user && npm run dev",
+    "dev:message": "cd services/message && npm run dev",
+    "dev:notifications": "cd services/notifications && npm run dev",
+    "dev:all": "concurrently -n \"gateway,auth,user,message,notif\" -c \"blue,green,yellow,magenta,cyan\" \"npm run dev:api-gateway\" \"npm run dev:auth\" \"npm run dev:user\" \"npm run dev:message\" \"npm run dev:notifications\"",
+    "dev": "npm run dev:all",
+    "build:api-gateway": "cd services/api-gateway && npm run build",
+    "build:auth": "cd services/auth && npm run build",
+    "build:user": "cd services/user && npm run build",
+    "build:message": "cd services/message && npm run build",
+    "build:notifications": "cd services/notifications && npm run build",
+    "build:all": "npm run build:common && npm run build:api-gateway && npm run build:auth && npm run build:user && npm run build:message && npm run build:notifications",
+    "build": "npm run build:all",
+    "clean": "docker-compose down -v",
+    "clean:docker": "docker-compose down -v --rmi all",
+    "db:init": "docker-compose up -d postgres && sleep 5 && echo 'Database initialized'",
+    "db:reset": "docker-compose down postgres && docker volume rm mansion_postgres_data && npm run db:init"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "messaging",
+    "e2ee",
+    "secure",
+    "chat",
+    "microservices",
+    "websocket"
+  ]
+}

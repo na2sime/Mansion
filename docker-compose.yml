@@ -1,0 +1,218 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: mansion-postgres
+    environment:
+      POSTGRES_USER: mansion
+      POSTGRES_PASSWORD: mansion_dev_password
+      POSTGRES_DB: mansion
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - mansion-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mansion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: mansion-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mansion-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: mansion-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: mansion
+      RABBITMQ_DEFAULT_PASS: mansion_dev_password
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - mansion-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: mansion-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      AUTH_SERVICE_URL: http://auth-service:3001
+      USER_SERVICE_URL: http://user-service:3002
+      MESSAGE_SERVICE_URL: http://message-service:3003
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004
+    depends_on:
+      - auth-service
+      - user-service
+      - message-service
+      - notification-service
+    networks:
+      - mansion-network
+    volumes:
+      - ./services/api-gateway:/app
+      - /app/node_modules
+    command: npm run dev
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    container_name: mansion-auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: mansion_auth
+      DB_USER: mansion
+      DB_PASSWORD: mansion_dev_password
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWT_REFRESH_SECRET: dev_jwt_refresh_secret_change_in_production
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TWO_FA_ISSUER: Mansion
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mansion-network
+    volumes:
+      - ./services/auth:/app
+      - /app/node_modules
+    command: npm run dev
+
+  # User Service
+  user-service:
+    build:
+      context: ./services/user
+      dockerfile: Dockerfile
+    container_name: mansion-user-service
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: mansion_user
+      DB_USER: mansion
+      DB_PASSWORD: mansion_dev_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://mansion:mansion_dev_password@rabbitmq:5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - mansion-network
+    volumes:
+      - ./services/user:/app
+      - /app/node_modules
+    command: npm run dev
+
+  # Message Service
+  message-service:
+    build:
+      context: ./services/message
+      dockerfile: Dockerfile
+    container_name: mansion-message-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      NODE_ENV: development
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://mansion:mansion_dev_password@rabbitmq:5672
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      WEBSOCKET_CORS_ORIGIN: "*"
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - mansion-network
+    volumes:
+      - ./services/message:/app
+      - /app/node_modules
+    command: npm run dev
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./services/notifications
+      dockerfile: Dockerfile
+    container_name: mansion-notification-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      NODE_ENV: development
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://mansion:mansion_dev_password@rabbitmq:5672
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - mansion-network
+    volumes:
+      - ./services/notifications:/app
+      - /app/node_modules
+    command: npm run dev
+
+networks:
+  mansion-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
